@@ -1,0 +1,9 @@
+# AgentProof contributor standards
+
+- Keep the deterministic evaluator independent of IO. Fixtures are trusted, declarative data and the tool executor returns simulated effects. Maintain a versioned specification, bounded inputs, explicit assertions, stable trace ordering, and reproducible replay.
+- Keep HTTP adapters outside the deterministic engine. External network effects default to disabled and may only target operator-approved endpoints under hard limits. Never run shell commands or code emitted by an agent. Use no live email, payment, CRM, repository, or similar write tools. A Docker container alone provides no guarantee for running hostile code.
+- Enforce workspace ownership in database reads and mutations. Treat suite inputs, credentials, and external provider data as sensitive. Never include them in traces, exception details, or logs. Disable public access to local development endpoints and require an explicit production design review before deployment.
+- Ship database changes as new, ordered SQL migrations. Keep previously applied migrations immutable. Preserve stored run evidence across retry and replay.
+- Use pinned dependencies and lockfiles. Run Ruff, strict mypy, pytest with PostgreSQL, frontend lint and type checks, a production build, and Playwright against real stored data when affected. Run dependency audits and prove both release-gate exit paths for release-gate changes.
+- Label deterministic simulations, integration checks, real-provider checks, and production observations separately. Record the tested revision, exact commands, and any skipped or blocked checks. Do not claim a security guarantee or production readiness based on simulation.
+- Use the existing checkout in isolated cloud tasks. Create a worktree only on request. Keep changes reviewable, preserve user files, and never merge automatically.
