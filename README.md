@@ -26,6 +26,17 @@ uv run python -m agentproof gate examples/defensive-suite.json --fixture vulnera
 
 The second gate command returns a nonzero status because the vulnerable fixture fails critical checks. Both commands emit a JSON report.
 
+## Inspect recorded agent traces (V2 preview)
+
+The first expert-tier enhancement inspects bounded, metadata-only imported event traces against a strict default-deny policy:
+
+```bash
+uv run --locked agentproof inspect-trace examples/imported-safe-trace.json
+uv run --locked agentproof inspect-trace examples/imported-unsafe-trace.json
+```
+
+These commands respectively return exit codes 0 and 1. The imported trace origin is **unverified** and is always marked `release_eligible: false`. A passing inspection does not certify a real agent, its logs, or a production release. See [recorded trace inspection](docs/recorded-trace.md).
+
 ## Documentation
 
 - [Getting started](docs/getting-started.md) walks through the dashboard, CLI, and local development.
@@ -34,6 +45,7 @@ The second gate command returns a nonzero status because the vulnerable fixture 
 - [HTTP API](docs/api.md) documents workspace access and request examples.
 - [Threat model](docs/threat-model.md) describes trust boundaries and residual risks.
 - [External agent adapter](docs/http-adapter.md) documents the separate, opt-in HTTP integration.
+- [Recorded trace inspection](docs/recorded-trace.md) describes untrusted imported evidence and fail-closed checks.
 - [Evidence and limitations](docs/evidence.md) defines what each class of evidence supports and tracks validation.
 
 AgentProof is an early open-source MVP. Fixture results describe the supplied simulations. No provider credentials are needed for the deterministic tests.
