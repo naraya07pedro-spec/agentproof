@@ -211,7 +211,7 @@ def inspect_trace(trace: RecordedTrace, policy: TracePolicy) -> TraceInspection:
         {"trace": trace.model_dump(mode="json"), "policy": policy.model_dump(mode="json")},
         sort_keys=True,
         separators=(",", ":"),
-        ensure_ascii=False
+        ensure_ascii=False,
     ).encode("utf-8")
     return TraceInspection(
         policy_passed=not findings,
