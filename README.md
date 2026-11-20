@@ -28,11 +28,11 @@ The second gate command returns a nonzero status because the vulnerable fixture 
 
 ## Inspect recorded agent traces (V2 preview)
 
-The first expert-tier enhancement inspects bounded, metadata-only imported event traces against a strict default-deny policy:
+The first expert-tier enhancement inspects bounded, metadata-only imported event traces against an independently supplied operator-controlled policy:
 
 ```bash
-uv run --locked agentproof inspect-trace examples/imported-safe-trace.json
-uv run --locked agentproof inspect-trace examples/imported-unsafe-trace.json
+uv run --locked agentproof inspect-trace examples/imported-safe-trace.json --policy examples/imported-policy.json
+uv run --locked agentproof inspect-trace examples/imported-unsafe-trace.json --policy examples/imported-policy.json
 ```
 
 These commands respectively return exit codes 0 and 1. The imported trace origin is **unverified** and is always marked `release_eligible: false`. A passing inspection does not certify a real agent, its logs, or a production release. See [recorded trace inspection](docs/recorded-trace.md).
