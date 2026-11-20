@@ -2,16 +2,17 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
 from pytest import CaptureFixture
 
 from agentproof.cli import main
-from agentproof.trace_inspect import RecordedTrace, inspect_trace, load_trace
+from agentproof.trace_inspect import RecordedTrace, TraceInspection, inspect_trace, load_trace
 
 
-def example_events() -> list[dict[str, object]]:
+def example_events() -> list[dict[str, Any]]:
     return [
         {"seq": 1, "kind": "tool_requested", "call_id": "c1", "tool": "record", "scope": "test"},
         {"seq": 2, "kind": "approval_granted", "call_id": "c1", "tool": "record", "scope": "test"},
@@ -20,7 +21,7 @@ def example_events() -> list[dict[str, object]]:
     ]
 
 
-def example_trace() -> dict[str, object]:
+def example_trace() -> dict[str, Any]:
     return {
         "version": "1",
         "run_id": "test-run",
@@ -35,7 +36,7 @@ def example_trace() -> dict[str, object]:
     }
 
 
-def evaluate(value: dict[str, object]) -> object:
+def evaluate(value: dict[str, Any]) -> TraceInspection:
     return inspect_trace(RecordedTrace.model_validate(value))
 
 
