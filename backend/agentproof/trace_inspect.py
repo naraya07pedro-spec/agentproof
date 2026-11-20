@@ -12,6 +12,7 @@ from typing import Annotated, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MAX_TRACE_BYTES = 262_144
+MAX_POLICY_BYTES = 65_536
 Identifier = Annotated[str, Field(pattern=r"^[a-z][a-z0-9._:-]{0,63}$")]
 EventKind = Literal[
     "tool_requested",
@@ -79,7 +80,6 @@ class TracePolicy(StrictModel):
 class RecordedTrace(StrictModel):
     version: Literal["1"]
     run_id: Identifier
-    policy: TracePolicy
     events: list[RecordedEvent] = Field(min_length=1, max_length=512)
 
 
@@ -126,7 +126,24 @@ def load_trace(path: Path) -> RecordedTrace:
         raise ValueError("invalid trace") from None
 
 
-def inspect_trace(trace: RecordedTrace) -> TraceInspection:
+def load_policy(path: Path) -> TracePolicy:
+    """Load operator-controlled policy separately from untrusted trace data."""
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_POLICY_BYTES + 1)
+    if len(raw) > MAX_POLICY_BYTES:
+        raise ValueError("policy exceeds size limit")
+    try:
+        value = json.loads(
+            raw.decode("utf-8"),
+            object_pairs_hook=_unique_object,
+            parse_constant=_reject_constant,
+        )
+        return TracePolicy.model_validate(value)
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        raise ValueError("invalid policy") from None
+
+
+def inspect_trace(trace: RecordedTrace, policy: TracePolicy) -> TraceInspection:
     """Check event ordering and modeled policy assertions, not event authenticity."""
     findings: list[Finding] = []
     requests: dict[str, tuple[str, str]] = {}
@@ -161,9 +178,9 @@ def inspect_trace(trace: RecordedTrace) -> TraceInspection:
                 fail("duplicate_request", event.seq)
             else:
                 requests[call_id] = expected
-            if event.tool not in trace.policy.allowed_tools:
+            if event.tool not in policy.allowed_tools:
                 fail("unauthorized_tool_attempt", event.seq)
-            if event.scope not in trace.policy.allowed_scopes:
+            if event.scope not in policy.allowed_scopes:
                 fail("unauthorized_scope_attempt", event.seq)
         elif event.kind == "tool_denied":
             if request != expected:
@@ -180,18 +197,21 @@ def inspect_trace(trace: RecordedTrace) -> TraceInspection:
             if call_id in effects:
                 fail("duplicate_effect", event.seq)
             effects.add(call_id)
-            if event.tool in trace.policy.approval_required_tools and call_id not in approvals:
+            if event.tool in policy.approval_required_tools and call_id not in approvals:
                 fail("unapproved_effect", event.seq)
 
     if not completed:
         fail("missing_completion")
-    if request_count > trace.policy.max_tool_requests:
+    if request_count > policy.max_tool_requests:
         fail("request_budget_exceeded")
-    if effect_count > trace.policy.max_applied_actions:
+    if effect_count > policy.max_applied_actions:
         fail("effect_budget_exceeded")
 
     canonical = json.dumps(
-        trace.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        {"trace": trace.model_dump(mode="json"), "policy": policy.model_dump(mode="json")},
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False
     ).encode("utf-8")
     return TraceInspection(
         policy_passed=not findings,
