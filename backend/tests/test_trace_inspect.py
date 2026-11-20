@@ -9,7 +9,14 @@ from pydantic import ValidationError
 from pytest import CaptureFixture
 
 from agentproof.cli import main
-from agentproof.trace_inspect import RecordedTrace, TraceInspection, inspect_trace, load_trace
+from agentproof.trace_inspect import (
+    RecordedTrace,
+    TraceInspection,
+    TracePolicy,
+    inspect_trace,
+    load_policy,
+    load_trace,
+)
 
 
 def example_events() -> list[dict[str, Any]]:
@@ -21,23 +28,27 @@ def example_events() -> list[dict[str, Any]]:
     ]
 
 
+def example_policy() -> dict[str, Any]:
+    return {
+        "allowed_tools": ["record"],
+        "allowed_scopes": ["test"],
+        "approval_required_tools": ["record"],
+        "max_tool_requests": 1,
+        "max_applied_actions": 1,
+    }
+
+
 def example_trace() -> dict[str, Any]:
     return {
         "version": "1",
         "run_id": "test-run",
-        "policy": {
-            "allowed_tools": ["record"],
-            "allowed_scopes": ["test"],
-            "approval_required_tools": ["record"],
-            "max_tool_requests": 1,
-            "max_applied_actions": 1,
-        },
         "events": example_events(),
     }
 
 
 def evaluate(value: dict[str, Any]) -> TraceInspection:
-    return inspect_trace(RecordedTrace.model_validate(value))
+    policy = TracePolicy.model_validate(example_policy())
+    return inspect_trace(RecordedTrace.model_validate(value), policy)
 
 
 def test_valid_imported_trace_is_not_release_eligible() -> None:
@@ -106,6 +117,13 @@ def test_strict_schema_rejects_content_and_noncontiguous_trace() -> None:
     assert "sequence_gap" in [finding.code for finding in evaluate(value).findings]
 
 
+def test_untrusted_policy_override_is_rejected() -> None:
+    value = example_trace()
+    value["policy"] = {"allowed_tools": ["admin"]}
+    with pytest.raises(ValidationError):
+        evaluate(value)
+
+
 def test_parser_rejects_duplicate_keys_and_overlimit(tmp_path: Path) -> None:
     invalid = tmp_path / "invalid.json"
     invalid.write_text('{"version":"1","version":"1"}')
@@ -114,18 +132,24 @@ def test_parser_rejects_duplicate_keys_and_overlimit(tmp_path: Path) -> None:
     invalid.write_bytes(b" " * 262145)
     with pytest.raises(ValueError):
         load_trace(invalid)
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text('{"allowed_tools":[],"allowed_tools":[]}')
+    with pytest.raises(ValueError):
+        load_policy(policy_path)
 
 
 def test_cli_exit_code_and_sanitized_error(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
     path = tmp_path / "trace.json"
     path.write_text(json.dumps(example_trace()))
-    assert main(["inspect-trace", str(path)]) == 0
+    policy_path = tmp_path / "policy.json"
+    policy_path.write_text(json.dumps(example_policy()))
+    assert main(["inspect-trace", str(path), "--policy", str(policy_path)]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["policy_passed"] is True
     assert result["release_eligible"] is False
 
     path.write_text('{"untrusted": "do not expose me"}')
-    assert main(["inspect-trace", str(path)]) == 2
+    assert main(["inspect-trace", str(path), "--policy", str(policy_path)]) == 2
     assert json.loads(capsys.readouterr().out) == {
         "error": "invalid_or_unreadable_trace",
         "policy_passed": False,
