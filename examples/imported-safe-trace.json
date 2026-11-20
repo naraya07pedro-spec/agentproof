@@ -1,19 +1,6 @@
 {
   "version": "1",
   "run_id": "demo-safe",
-  "policy": {
-    "allowed_tools": [
-      "record"
-    ],
-    "allowed_scopes": [
-      "test"
-    ],
-    "approval_required_tools": [
-      "record"
-    ],
-    "max_tool_requests": 1,
-    "max_applied_actions": 1
-  },
   "events": [
     {
       "seq": 1,
