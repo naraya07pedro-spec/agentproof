@@ -116,9 +116,7 @@ def test_parser_rejects_duplicate_keys_and_overlimit(tmp_path: Path) -> None:
         load_trace(invalid)
 
 
-def test_cli_exit_code_and_sanitized_error(
-    tmp_path: Path, capsys: CaptureFixture[str]
-) -> None:
+def test_cli_exit_code_and_sanitized_error(tmp_path: Path, capsys: CaptureFixture[str]) -> None:
     path = tmp_path / "trace.json"
     path.write_text(json.dumps(example_trace()))
     assert main(["inspect-trace", str(path)]) == 0
