@@ -64,6 +64,11 @@ jobs:
           test "$status" -eq 1
           jq -e '.gate_passed == false' "$RUNNER_TEMP/vulnerable.json"
           uv run --locked agentproof gate examples/defensive-suite.json --fixture corrected
+          uv run --locked agentproof inspect-trace examples/imported-safe-trace.json --policy examples/imported-policy.json | jq -e '.policy_passed == true and .release_eligible == false'
+          trace_status=0
+          uv run --locked agentproof inspect-trace examples/imported-unsafe-trace.json --policy examples/imported-policy.json > "$RUNNER_TEMP/unsafe-trace.json" || trace_status=$?
+          test "$trace_status" -eq 1
+          jq -e '.policy_passed == false and .release_eligible == false' "$RUNNER_TEMP/unsafe-trace.json"
       - name: Check frontend
         working-directory: frontend
         run: |

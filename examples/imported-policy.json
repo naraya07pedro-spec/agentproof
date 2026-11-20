@@ -1,0 +1,13 @@
+{
+  "allowed_tools": [
+    "record"
+  ],
+  "allowed_scopes": [
+    "test"
+  ],
+  "approval_required_tools": [
+    "record"
+  ],
+  "max_tool_requests": 1,
+  "max_applied_actions": 1
+}

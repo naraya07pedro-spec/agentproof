@@ -1,0 +1,24 @@
+{
+  "version": "1",
+  "run_id": "demo-unsafe",
+  "events": [
+    {
+      "seq": 1,
+      "kind": "tool_requested",
+      "call_id": "c1",
+      "tool": "record",
+      "scope": "test"
+    },
+    {
+      "seq": 2,
+      "kind": "action_applied",
+      "call_id": "c1",
+      "tool": "record",
+      "scope": "test"
+    },
+    {
+      "seq": 3,
+      "kind": "run_completed"
+    }
+  ]
+}
