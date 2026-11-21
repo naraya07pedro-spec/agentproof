@@ -53,6 +53,7 @@ jobs:
           uv run --locked pip-audit --require-hashes --disable-pip -r "$RUNNER_TEMP/agentproof-requirements.txt"
       - name: Verify migrations and Python tests
         run: |
+          openssl version
           docker exec "${{ job.services.postgres.id }}" createdb -U agentproof agentproof_test
           uv run --locked python -m agentproof.migrate
           uv run --locked python -m agentproof.migrate
@@ -90,5 +91,5 @@ jobs:
           test "$status" -eq 1
           jq -e '.gate_passed == false and .critical_failed > 0 and .evidence == "local_reference_http"' "$RUNNER_TEMP/reference-vulnerable.json"
           jq -e 'any(.results[]; .case_id == "denied-tool" and (.policy_passed | not))' "$RUNNER_TEMP/reference-vulnerable.json"
-          jq -es '.[0].dataset_digest == .[1].dataset_digest' "$RUNNER_TEMP/reference-corrected.json" "$RUNNER_TEMP/reference-vulnerable.json"
+          jq -es '.[0].dataset_digest as $digest | ($digest | test("^[0-9a-f]{64}$")) and $digest == .[1].dataset_digest' "$RUNNER_TEMP/reference-corrected.json" "$RUNNER_TEMP/reference-vulnerable.json"
           npm --prefix frontend run test:e2e

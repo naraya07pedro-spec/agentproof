@@ -53,6 +53,8 @@ The API runs the built-in reference agents against the curated synthetic benchma
 
 Agents expose identity, description, model, version, and evidence mode. Suites expose identity, description, version, and a dataset digest. A run summary includes its own ID and correlation ID, agent and model identity, suite version and digest, adapter and evaluator versions, evidence source, timestamps, verdict and case counts, and optional cost. Run detail adds task and policy measurements and case results. List pagination follows the V1 limits. A run start with an unknown suite or unavailable agent returns HTTP 404. The shared database evaluation slot can return HTTP 429 with `Retry-After: 1`. The JSON request accepts at most 1 KiB.
 
+Invalid opt-in provider configuration returns HTTP 503 on the authorized workspace's agent catalog and on attempts to start the external agent. A client disconnect or dashboard proxy timeout can leave a dispatched benchmark running. Check run history before retrying. A second invocation can create a separate run and duplicate provider charges.
+
 ### Reference HTTP example
 
 Use the local workspace token and select the curated benchmark by its returned ID.

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import socket
 import ssl
+import subprocess
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -77,6 +80,8 @@ def wire(body: bytes, status: int = 200, *, add_headers: bytes = b"") -> bytes:
 @asynccontextmanager
 async def provider(
     reply: Callable[[list[tuple[bytes, bytes]]], bytes | None],
+    *,
+    tls: ssl.SSLContext | None = None,
 ) -> AsyncIterator[tuple[int, list[tuple[bytes, bytes]]]]:
     requests: list[tuple[bytes, bytes]] = []
 
@@ -99,7 +104,7 @@ async def provider(
             writer.close()
             await writer.wait_closed()
 
-    async with await asyncio.start_server(handle, "127.0.0.1", 0) as server:
+    async with await asyncio.start_server(handle, "127.0.0.1", 0, ssl=tls) as server:
         yield int(server.sockets[0].getsockname()[1]), requests
 
 
@@ -326,5 +331,98 @@ def test_external_disabled_and_fixed_tls_destination(monkeypatch: pytest.MonkeyP
             assert (await adapter.respond(MESSAGES, timeout_s=2)).label == "billing"
             assert b"Authorization: Bearer synthetic-fixture-token\r\n" in requests[0][0]
             assert b"Host: fixture.example.com\r\n" in requests[0][0]
+
+    asyncio.run(verify())
+
+
+def test_external_tls_verifies_hostname_before_sending_credentials(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    openssl = shutil.which("openssl")
+    if openssl is None:
+        pytest.skip("OpenSSL CLI is required to generate the ephemeral loopback test certificate")
+    certificate = tmp_path / "certificate.pem"
+    key = tmp_path / "key.pem"
+    matching = "fixture.example.com"
+    mismatched = "other.fixture.example.com"
+    public_pin = "1.1.1.1"
+    subprocess.run(
+        [
+            openssl,
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-days",
+            "1",
+            "-subj",
+            f"/CN={matching}",
+            "-addext",
+            f"subjectAltName=DNS:{matching}",
+            "-out",
+            str(certificate),
+            "-keyout",
+            str(key),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=15,
+    )
+    monkeypatch.setenv("SSL_CERT_FILE", str(certificate))
+    for suffix, value in {
+        "ENABLE_EXTERNAL": "1",
+        "HOSTNAME": matching,
+        "IPV4": public_pin,
+        "PATH": "/v1/chat/completions",
+        "NAME": "tls-test-model",
+        "VERSION": "tls-test-revision",
+        "TOKEN": "synthetic-tls-token",
+    }.items():
+        monkeypatch.setenv(f"AGENTPROOF_MODEL_{suffix}", value)
+
+    server_tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_tls.load_cert_chain(certificate, key)
+    sni_names: list[str | None] = []
+
+    def record_sni(
+        _socket: ssl.SSLSocket | ssl.SSLObject,
+        hostname: str | None,
+        _context: object,
+    ) -> None:
+        sni_names.append(hostname)
+
+    server_tls.set_servername_callback(record_sni)
+
+    async def verify() -> None:
+        connect = asyncio.open_connection
+        async with provider(lambda _: wire(label_response()), tls=server_tls) as (port, requests):
+
+            async def connect_to_loopback(
+                host: str,
+                target_port: int,
+                **options: object,
+            ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+                assert (host, target_port) == (public_pin, 443)
+                assert options["flags"] == socket.AI_NUMERICHOST
+                assert options["family"] == socket.AF_INET
+                requested_hostname = options["server_hostname"]
+                assert isinstance(requested_hostname, str)
+                tls = options["ssl"]
+                assert isinstance(tls, ssl.SSLContext)
+                return await connect("127.0.0.1", port, ssl=tls, server_hostname=requested_hostname)
+
+            monkeypatch.setattr(asyncio, "open_connection", connect_to_loopback)
+            adapter = external_adapter_from_environment()
+            assert (await adapter.respond(MESSAGES, timeout_s=2)).label == "billing"
+            assert len(requests) == 1
+            headers = requests[0][0]
+            assert b"Authorization: Bearer synthetic-tls-token\r\n" in headers
+
+            monkeypatch.setenv("AGENTPROOF_MODEL_HOSTNAME", mismatched)
+            with pytest.raises(AdapterFailure, match="^unavailable$"):
+                await external_adapter_from_environment().respond(MESSAGES, timeout_s=2)
+            assert sni_names == [matching, mismatched]
+            assert len(requests) == 1
 
     asyncio.run(verify())
