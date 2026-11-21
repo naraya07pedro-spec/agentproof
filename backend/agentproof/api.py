@@ -2,140 +2,28 @@
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
-import hmac
 import json
 import logging
-import os
-import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
-from typing import Annotated, Self, cast
+from typing import Annotated
 from uuid import UUID
 
 import psycopg
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Security
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, ValidationError
-from starlette.requests import ClientDisconnect
 
+from . import agent_api, reference_agent
+from .api_common import Authenticated, bounded_body, bounded_json, get_settings, unique_object
+from .api_common import Settings as Settings
 from .db import RunDetail, RunSummary, SuiteDetail, SuiteSummary, connect, schema_current
 from .engine import ENGINE_VERSION, FixtureName, evaluate
 from .migrate import MigrationError
 from .spec import MAX_SPEC_BYTES, SuiteSpec, parse_suite_json
 
 LOGGER = logging.getLogger(__name__)
-WORKSPACE_ID = re.compile(r"[a-z][a-z0-9_-]{0,63}")
-TOKEN = re.compile(r"[A-Za-z0-9_-]{24,128}")
-BEARER = HTTPBearer(auto_error=False)
-BODY_READ_SECONDS = 5
-
-
-def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("Duplicate JSON key")
-        result[key] = value
-    return result
-
-
-@dataclass(frozen=True)
-class Settings:
-    database_url: str = field(repr=False)
-    token_hashes: dict[str, bytes] = field(repr=False)
-
-    @classmethod
-    def from_environment(cls) -> Self:
-        database_url = os.environ.get("AGENTPROOF_DATABASE_URL", "")
-        if not database_url:
-            raise RuntimeError("AGENTPROOF_DATABASE_URL is required")
-        raw_tokens = os.environ.get("AGENTPROOF_API_TOKENS", "")
-        try:
-            values: object = json.loads(raw_tokens, object_pairs_hook=unique_object)
-            if not isinstance(values, dict) or not 1 <= len(values) <= 64:
-                raise ValueError
-            hashes: dict[str, bytes] = {}
-            for owner, token in values.items():
-                if (
-                    not WORKSPACE_ID.fullmatch(owner)
-                    or not isinstance(token, str)
-                    or not TOKEN.fullmatch(token)
-                ):
-                    raise ValueError
-                hashes[owner] = hashlib.sha256(token.encode("ascii")).digest()
-            if len(set(hashes.values())) != len(hashes):
-                raise ValueError
-        except (ValueError, RecursionError):
-            raise RuntimeError(
-                "AGENTPROOF_API_TOKENS must map workspace IDs to unique tokens"
-            ) from None
-        return cls(database_url, hashes)
-
-
-@dataclass(frozen=True)
-class Tenant:
-    owner: str
-    database_url: str = field(repr=False)
-
-
-def get_settings(request: Request) -> Settings:
-    return cast(Settings, request.app.state.settings)
-
-
-async def authenticate(
-    request: Request,
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Security(BEARER)],
-) -> Tenant:
-    if (
-        credentials is not None
-        and len(request.headers.getlist("authorization")) == 1
-        and TOKEN.fullmatch(credentials.credentials)
-    ):
-        settings = get_settings(request)
-        supplied = hashlib.sha256(credentials.credentials.encode("ascii")).digest()
-        owner = None
-        for workspace, digest in settings.token_hashes.items():
-            if hmac.compare_digest(supplied, digest):
-                owner = workspace
-        if owner is not None:
-            return Tenant(owner, settings.database_url)
-    raise HTTPException(401, "Bearer authentication required", {"WWW-Authenticate": "Bearer"})
-
-
-Authenticated = Annotated[Tenant, Depends(authenticate)]
-
-
-async def bounded_body(request: Request, limit: int) -> bytes:
-    length = request.headers.get("content-length")
-    if length is not None:
-        if not re.fullmatch(r"[0-9]{1,20}", length):
-            raise HTTPException(400, "Invalid Content-Length")
-        if int(length) > limit:
-            raise HTTPException(413, "Request body exceeds size limit")
-    body = bytearray()
-    try:
-        async with asyncio.timeout(BODY_READ_SECONDS):
-            async for chunk in request.stream():
-                if len(body) + len(chunk) > limit:
-                    raise HTTPException(413, "Request body exceeds size limit")
-                body.extend(chunk)
-    except TimeoutError:
-        raise HTTPException(408, "Request body read timed out") from None
-    except ClientDisconnect:
-        raise HTTPException(400, "Incomplete request") from None
-    return bytes(body)
-
-
-async def bounded_json(request: Request, limit: int) -> bytes:
-    content_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
-    if content_type != "application/json":
-        raise HTTPException(415, "Expected application/json")
-    return await bounded_body(request, limit)
 
 
 async def require_empty_body(request: Request, _tenant: Authenticated) -> None:
@@ -320,6 +208,8 @@ def create_app(configured_settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(409, "Replay differs from stored evidence")
             return database.save_run(suite, report, replay_of=original.id)
 
+    app.include_router(agent_api.router)
+    app.include_router(reference_agent.router, prefix="/_reference", include_in_schema=False)
     return app
 
 

@@ -50,14 +50,20 @@ export type CaseResult = {
 
 export type RunDetail = Run & { results: CaseResult[] };
 
-type ApiOptions = { method: "POST"; body?: string };
+type ApiOptions = {
+  method?: "POST";
+  body?: string;
+  version?: "v1" | "v2";
+  signal?: AbortSignal;
+};
 
 export async function api<T>(token: string, path: string, options?: ApiOptions): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await fetch(`/api/${options?.version ?? "v1"}${path}`, {
     method: options?.method ?? "GET",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: options?.body,
     cache: "no-store",
+    signal: options?.signal,
   });
 
   if (!response.ok) {

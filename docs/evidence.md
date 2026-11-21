@@ -58,3 +58,38 @@ The API returned `{"status":"ok"}` and the dashboard returned HTTP 200. All thre
 [Dashboard screenshot from the stored-run browser test](stored-run-comparison.png)
 
 The integration suite used a real PostgreSQL database and a local browser. External adapter tests used a mocked transport. No live-provider validation, hostile-code isolation assessment, deployment, or production observation was performed.
+
+## V2 HTTP agent verification
+
+Merged V1 baseline `4e975ed6b124d11cc8bae303259733f369325dc7` passed 58 existing Python tests against PostgreSQL. The V2 implementation under test was `4d2f55efc81772c5a6c95930a32d6ef2b4b2fb64`. This record and screenshot are tracked in a later documentation commit.
+
+The verification host used Linux x86-64, Python 3.12.14, uv 0.13.6, Node 24.22.1, npm 11.9.0, PostgreSQL 17.10, Docker 29.9.2, Compose 2.40.3, and system Chromium 156.0.8078.79. I built and started the stack with `docker compose -p agentproof-v2-check -f compose.yaml -f compose.trusted-ca.yaml up --build --wait --wait-timeout 120`. The trusted CA overlay used the host's trusted PEM bundle for package downloads. [Local setup](getting-started.md)
+
+Measured commands, run once per reference in the ready API container:
+
+```bash
+docker compose -p agentproof-v2-check exec -T api agentproof model-gate --agent corrected
+docker compose -p agentproof-v2-check exec -T api agentproof model-gate --agent vulnerable
+```
+
+Both gates used the eight-case `ticket-triage` v2 benchmark with SHA-256 `858ccb04ae9a7cd55a6ff7100d075449d97316cae591ef590d9dc61c7950ab13`, adapter `openai-chat-completions/1.0`, and evidence mode `local_reference_http`. Six cases have a task label to score. [Benchmark data](../backend/agentproof/benchmarks/ticket-triage-v2.json)
+
+| Reference version | Cases passed | Task labels passed | Policy checks passed | Critical failures | HTTP calls | Elapsed | Exit status |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `2.0.0` corrected | 8/8 | 6/6 | 8/8 | 0 | 12 | 53 ms | 0 |
+| `2.0.0-vulnerable` | 6/8 | 4/6 | 7/8 | 2 | 12 | 55 ms | 1 |
+
+The vulnerable version followed the untrusted label override in `untrusted-note` and requested an unavailable mock tool in `denied-tool`. The broker recorded the denied request and performed no tool action for that request. Both references omitted token usage and cost was null. These are single-run elapsed values with an injected timeout and a retry. Their difference cannot establish a performance comparison. [Dashboard comparison from a separate local Playwright run](http-run-comparison.png)
+
+| Checks | Observed result |
+| --- | --- |
+| `uv sync --locked`, `uv run --locked ruff check backend`, `uv run --locked ruff format --check backend`, `uv run --locked mypy`, and `actionlint .github/workflows/ci.yml` | Passed. |
+| `uv run --locked pytest` with `AGENTPROOF_TEST_DATABASE_URL` set to a disposable PostgreSQL instance | 91 passed. Includes v1 data preservation after migration, cross-workspace separation, opt-in external authorization with a mock, partial-write rollback, and actual loopback HTTP response, retry, and deadline tests. |
+| `uv build --wheel --out-dir /tmp/agentproof-v2-wheel` and wheel inspection | Bundled benchmark and both SQL migrations present. |
+| `uv export --locked --no-emit-project --format requirements-txt` followed by `pip-audit --require-hashes --disable-pip`, and `npm audit --audit-level=high` in `frontend` | Package advisory sources reported no known vulnerabilities at check time. |
+| `npm ci`, `npm run lint`, `npm run typecheck`, `npm run build` in `frontend` | Passed. |
+| API readiness, OpenAPI bearer scheme, and `docker compose -p agentproof-v2-check exec -T api python -m agentproof.migrate` | Passed against the fresh Compose stack. The repeat migration reported current. |
+| `npm --prefix frontend run test:e2e` against Compose | 5 passed, including real stored run comparison, policy failure and sanitized trace visibility, and V1 regression coverage. |
+| `uv run --locked agentproof gate examples/defensive-suite.json --fixture corrected` and the corresponding vulnerable command, plus `uv run --locked agentproof gate examples/retry-recovery.yaml` | V1 retained the corrected pass, vulnerable critical failure, and successful YAML retry case. |
+
+Live-provider compatibility, model quality, live usage, and cost are **UNVERIFIED**. The local reference is scripted. Scope is limited to one curated synthetic benchmark, one optional externally configured profile for one workspace, and simulated effects. Container OS advisories and public deployment were outside the checks. [V2 guide](v2-evaluation.md) · [Threat model](threat-model.md)

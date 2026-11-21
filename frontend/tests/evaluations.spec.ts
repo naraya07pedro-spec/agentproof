@@ -4,6 +4,8 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { expect, test } from "@playwright/test";
 
+test.describe.configure({ mode: "default" });
+
 test("runs both fixtures, inspects stored evidence, compares and replays", async ({ page }, testInfo) => {
   const token = process.env.AGENTPROOF_E2E_TOKEN;
   if (!token) throw new Error("Set AGENTPROOF_E2E_TOKEN to a local fixture workspace token.");
@@ -93,4 +95,79 @@ test("dashboard upload deadline closes an incomplete request", async ({ baseURL 
     upload.write("{");
   });
   expect(result).toEqual({ status: 408, connection: "close" });
+});
+
+test("compares persisted HTTP reference runs and shows policy evidence", async ({ page }, testInfo) => {
+  test.setTimeout(95_000);
+  const token = process.env.AGENTPROOF_E2E_TOKEN;
+  if (!token) throw new Error("Set AGENTPROOF_E2E_TOKEN to a local fixture workspace token.");
+
+  await page.goto("/");
+  await page.getByLabel("API token").fill(token);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "HTTP evaluations" }).click();
+  await page.getByLabel("Agent configuration").selectOption("reference-vulnerable");
+
+  const failedRequest = page.waitForResponse((response) =>
+    response.url().endsWith("/api/v2/runs") && response.request().method() === "POST",
+    { timeout: 45_000 },
+  );
+  await page.getByRole("button", { name: "Run benchmark" }).click();
+  const failedResponse = await failedRequest;
+  expect(failedResponse.status()).toBe(201);
+  const vulnerableRun: { id: string; passed: boolean; critical_failed: number } = await failedResponse.json();
+  expect(vulnerableRun.passed).toBe(false);
+  expect(vulnerableRun.critical_failed).toBeGreaterThan(0);
+
+  const details = page.getByRole("region", { name: "Benchmark run details" });
+  const failedCase = details.locator("summary").filter({ hasText: "denied-tool" });
+  await expect(failedCase).toBeVisible();
+  await expect(failedCase).toContainText("Policy failure");
+  await failedCase.click();
+  await expect(details.getByRole("heading", { name: "Trace events" })).toBeVisible();
+  await expect(details.getByText("tool denied", { exact: true })).toBeVisible();
+  await expect(details.getByText("Local HTTP reference", { exact: true })).toBeVisible();
+
+  await page.getByLabel("Agent configuration").selectOption("reference-corrected");
+  const successfulRequest = page.waitForResponse((response) =>
+    response.url().endsWith("/api/v2/runs") && response.request().method() === "POST",
+    { timeout: 45_000 },
+  );
+  await page.getByRole("button", { name: "Run benchmark" }).click();
+  const successfulResponse = await successfulRequest;
+  expect(successfulResponse.status()).toBe(201);
+  const correctedRun: { id: string; passed: boolean } = await successfulResponse.json();
+  expect(correctedRun.passed).toBe(true);
+
+  await page.getByLabel("Compare benchmark with").selectOption(vulnerableRun.id);
+  const comparison = details.getByRole("table", { name: "Case comparison for the same benchmark dataset" });
+  await expect(comparison.getByRole("columnheader").nth(1)).toContainText("Corrected reference agent");
+  await expect(comparison.getByRole("columnheader").nth(2)).toContainText("Vulnerable reference agent");
+  await expect(comparison.getByRole("row", { name: "Policy cases passed", exact: false })).toBeVisible();
+  const policyComparison = comparison.getByRole("row").filter({ hasText: "denied-tool" });
+  await expect(policyComparison.getByRole("cell").nth(1)).toContainText("Pass");
+  await expect(policyComparison.getByRole("cell").nth(2)).toContainText("Fail");
+
+  if (process.env.AGENTPROOF_E2E_SCREENSHOT === "1") {
+    await page.screenshot({ path: testInfo.outputPath("http-reference-comparison.png"), fullPage: true });
+  }
+
+  await page.reload();
+  await page.getByLabel("API token").fill(token);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "HTTP evaluations" }).click();
+  const ledger = page.getByRole("region", { name: "HTTP run history" });
+  const storedRun = ledger.getByRole("row").filter({ hasText: correctedRun.id.slice(0, 8) });
+  await expect(storedRun).toContainText("Pass");
+  await storedRun.getByRole("button").click();
+  await expect(details.getByText(correctedRun.id, { exact: true })).toBeVisible();
+});
+
+test("V2 forwarding accepts only benchmark routes and bounded request data", async ({ request }) => {
+  const headers = { Authorization: "Bearer test" };
+  expect((await request.get("/api/v2/reference/corrected", { headers })).status()).toBe(404);
+  expect((await request.post("/api/v2/agents", { headers, data: {} })).status()).toBe(404);
+  expect((await request.get("/api/v2/runs")).status()).toBe(401);
+  const oversized = await request.post("/api/v2/runs", { headers, data: { value: "x".repeat(1024) } });
+  expect(oversized.status()).toBe(413);
 });
