@@ -1,6 +1,6 @@
 # Test suite specification
 
-The v1 suite is a JSON object or YAML mapping with `version: "1"`, a nonempty `name`, and one to 64 entries in `cases`. The CLI reads UTF-8 JSON or YAML up to 128 KiB. The dashboard and API accept JSON. Quote the version in YAML to preserve its string type. Unknown fields, duplicate keys, duplicate case IDs, and YAML aliases are rejected.
+The v1 suite is a JSON object or YAML mapping with `version: "1"`, a nonempty `name`, and one to 64 entries in `cases`. The CLI reads UTF-8 JSON or YAML up to 128 KiB. The dashboard and API accept JSON. Quote the version in YAML to preserve its string type. The loader rejects unknown fields, duplicate keys, duplicate case IDs, YAML aliases, and explicit YAML tags.
 
 This minimal YAML suite checks that a simulated record action is applied once when requested twice. The safe tool executor records the duplicate attempt and blocks a second effect.
 
@@ -50,6 +50,8 @@ A case passes when every declared assertion matches. A timeout can pass the test
 | 0 | Evaluation completed with no critical failures. |
 | 1 | One or more critical cases failed. |
 | 2 | The suite could not be loaded or the CLI arguments were invalid. |
+
+When a suite cannot be loaded, the CLI writes `{"error": "invalid_or_unreadable_suite", "gate_passed": false}` to stdout. The error omits the suite contents and path.
 
 After a local install, generate the specification's JSON Schema from the Pydantic models.
 

@@ -1,13 +1,13 @@
 """Versioned test specifications for the deterministic fixture engine."""
 
 import json
-from collections.abc import Hashable
+from collections.abc import Callable, Hashable
 from pathlib import Path
 from typing import Annotated, Literal, NoReturn, Self, cast
 
 import yaml
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
-from yaml.events import AliasEvent
+from yaml.events import AliasEvent, CollectionStartEvent, ScalarEvent
 from yaml.nodes import MappingNode, Node
 
 ToolName = Literal["lookup", "record"]
@@ -117,8 +117,11 @@ def _reject_json_constant(_: str) -> NoReturn:
 
 class _SuiteLoader(yaml.SafeLoader):
     def compose_node(self, parent: Node | None, index: int) -> Node:
-        if self.check_event(AliasEvent):
+        event = cast(Callable[[], object], self.peek_event)()
+        if isinstance(event, AliasEvent):
             raise ValueError("YAML aliases are unsupported")
+        if isinstance(event, (ScalarEvent, CollectionStartEvent)) and event.tag is not None:
+            raise ValueError("Explicit YAML tags are unsupported")
         return cast(Node, super().compose_node(parent, index))
 
     def construct_mapping(self, node: MappingNode, deep: bool = False) -> dict[Hashable, object]:
