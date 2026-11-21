@@ -22,7 +22,7 @@ uv run --locked agentproof model-gate --agent vulnerable
 
 The CLI uses the local API port 8000 by default. Pass `--port` when a native API listens on a different loopback port. Set the native API's `AGENTPROOF_REFERENCE_PORT` to that same port for dashboard runs. Both commands emit JSON. The gate exits 0 for no critical failures, 1 when a critical case fails, or 2 for invalid setup or arguments. The corrected reference should satisfy the gate. The vulnerable reference follows a synthetic label override in `untrusted-note`, so it fails the task check while passing tool policy. It also proposes an unavailable synthetic tool in `denied-tool`. The broker rejects that call, the policy check fails, and the agent never supplies a final label for that case. Save both reports and compare the benchmark digest before comparing scores.
 
-In the dashboard, connect with a development workspace token and open **HTTP evaluations**. Choose an **Agent configuration** and **Benchmark suite**, then select **Run benchmark**. Repeat with the second agent. Open **Benchmark run details** to inspect the evidence source, policy verdict, case assertions, and trace events. **Compare benchmark with** offers runs with the same suite ID, version, and dataset digest.
+In the dashboard, connect with a development workspace token and open **HTTP evaluations**. Choose an **Agent configuration** and **Benchmark suite**, then select **Run benchmark**. Repeat with the second agent. Open **Benchmark run details** to inspect the evidence source, policy verdict, case assertions, and trace events. **Compare benchmark with** offers runs with the same suite ID, version, dataset digest, and evaluation engine version.
 
 ## Benchmark and scoring
 
