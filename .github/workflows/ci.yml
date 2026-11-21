@@ -53,6 +53,7 @@ jobs:
           uv run --locked pip-audit --require-hashes --disable-pip -r "$RUNNER_TEMP/agentproof-requirements.txt"
       - name: Verify migrations and Python tests
         run: |
+          openssl version
           docker exec "${{ job.services.postgres.id }}" createdb -U agentproof agentproof_test
           uv run --locked python -m agentproof.migrate
           uv run --locked python -m agentproof.migrate
@@ -73,7 +74,7 @@ jobs:
           npm run typecheck
           npm run build
           npx playwright install --with-deps chromium
-      - name: Browser integration against PostgreSQL
+      - name: HTTP agent release gate and browser integration against PostgreSQL
         run: |
           uv run --locked uvicorn agentproof.api:app --host 127.0.0.1 --port 8000 --limit-concurrency 32 --no-access-log &
           api_pid=$!
@@ -83,4 +84,12 @@ jobs:
           for url in http://127.0.0.1:8000/healthz http://127.0.0.1:3000/; do
             curl --fail --silent --show-error --max-time 5 --retry 30 --retry-connrefused --retry-delay 1 "$url" -o /dev/null
           done
+          uv run --locked agentproof model-gate --agent corrected > "$RUNNER_TEMP/reference-corrected.json"
+          jq -e '.gate_passed and .critical_failed == 0 and .evidence == "local_reference_http" and .metrics.adapter_calls > 0' "$RUNNER_TEMP/reference-corrected.json"
+          status=0
+          uv run --locked agentproof model-gate --agent vulnerable > "$RUNNER_TEMP/reference-vulnerable.json" || status=$?
+          test "$status" -eq 1
+          jq -e '.gate_passed == false and .critical_failed > 0 and .evidence == "local_reference_http"' "$RUNNER_TEMP/reference-vulnerable.json"
+          jq -e 'any(.results[]; .case_id == "denied-tool" and (.policy_passed | not))' "$RUNNER_TEMP/reference-vulnerable.json"
+          jq -es '.[0].dataset_digest as $digest | ($digest | test("^[0-9a-f]{64}$")) and $digest == .[1].dataset_digest' "$RUNNER_TEMP/reference-corrected.json" "$RUNNER_TEMP/reference-vulnerable.json"
           npm --prefix frontend run test:e2e

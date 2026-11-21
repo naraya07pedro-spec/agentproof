@@ -53,4 +53,4 @@ select = ["E4", "E7", "E9", "F", "I"]
 known-first-party = ["agentproof"]
 
 [tool.setuptools.package-data]
-agentproof = ["migrations/*.sql"]
+agentproof = ["migrations/*.sql", "benchmarks/*.json"]

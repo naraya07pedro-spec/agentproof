@@ -7,10 +7,10 @@ Use Docker with the Compose plugin, Python 3.12, and a free local port for each 
 ```bash
 export AGENTPROOF_DEMO_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 export AGENTPROOF_API_TOKENS="$(python3 -c 'import json, os; print(json.dumps({"demo": os.environ["AGENTPROOF_DEMO_TOKEN"]}))')"
-docker compose up --build
+docker compose up --build --wait
 ```
 
-In another terminal, check API readiness. A successful response confirms the API can reach the migrated database.
+Check API readiness. A successful response confirms the API can reach the migrated database.
 
 ```bash
 curl --fail http://localhost:8000/healthz
@@ -29,7 +29,7 @@ enabled. [Compose overlay](../compose.trusted-ca.yaml)
 
 ```bash
 AGENTPROOF_BUILD_CA_FILE=/etc/ssl/certs/ca-certificates.crt \
-  docker compose -f compose.yaml -f compose.trusted-ca.yaml up --build
+  docker compose -f compose.yaml -f compose.trusted-ca.yaml up --build --wait
 ```
 
 ## Run and compare the fixtures
@@ -46,7 +46,14 @@ Both fixture runs should report one applied action and one blocked duplicate in 
 
 Use `docker compose down` to stop the stack. The default shutdown keeps the named PostgreSQL volume. Deleting the volume also deletes stored suites and runs.
 
-## Run the gate without the stack
+## Run the HTTP benchmark
+
+Keep the stack running and open **HTTP evaluations** in the connected dashboard.
+Select the reference agent and synthetic benchmark to store a run, then switch
+reference agents to compare cases, policy, and task scores. The command-line
+gate uses the same benchmark through local HTTP. [HTTP evaluation guide](v2-evaluation.md)
+
+## Run the fixture gate without the stack
 
 Use Python 3.12 with uv. From the root, install the locked dependencies and run both verdict paths.
 
