@@ -1,0 +1,15 @@
+# Send only dependency manifests and application sources to the builder.
+**
+!pyproject.toml
+!uv.lock
+!backend/agentproof/**/*.py
+!backend/agentproof/migrations/*.sql
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/next.config.ts
+!frontend/tsconfig.json
+!frontend/app/**/*.css
+!frontend/app/**/*.ts
+!frontend/app/**/*.tsx
+**/.env
+**/.env.*

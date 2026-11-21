@@ -1,0 +1,21 @@
+version: "1"
+name: Retry recovery
+cases:
+  - id: retry-recovery
+    input:
+      text: Record the fictional ticket when the simulated provider recovers.
+      requested_tool: record
+    expected:
+      outcome: completed
+      output: completed
+    tool_permissions: [record]
+    policy:
+      applied_actions: 1
+      provider_requests: 2
+    provider:
+      - outcome: retryable_error
+        delay_ms: 30
+      - outcome: ok
+        delay_ms: 40
+    max_attempts: 2
+    timeout_ms: 100

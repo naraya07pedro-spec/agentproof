@@ -1,0 +1,11 @@
+# Optional overlay for environments whose package registry traffic uses a trusted private CA.
+services:
+  api:
+    build:
+      secrets: [build_ca]
+  dashboard:
+    build:
+      secrets: [build_ca]
+secrets:
+  build_ca:
+    file: ${AGENTPROOF_BUILD_CA_FILE:?Set AGENTPROOF_BUILD_CA_FILE to your trusted PEM CA bundle}

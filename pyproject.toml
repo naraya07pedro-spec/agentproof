@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools==84.2.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentproof"
+version = "0.1.0"
+description = "Deterministic reliability and policy evaluation for tool-calling agents"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi==0.165.0",
+  "h11==0.16.0",
+  "psycopg[binary]==3.3.9",
+  "pydantic==2.14.4",
+  "pyyaml==6.0.3",
+  "uvicorn==0.54.0",
+]
+
+[project.scripts]
+agentproof = "agentproof.cli:main"
+
+[dependency-groups]
+dev = [
+  "httpx2==2.16.2",
+  "mypy==2.4.1",
+  "pip-audit==2.10.1",
+  "pytest==9.2.0",
+  "ruff==0.17.6",
+  "types-pyyaml==6.0.12.20261113",
+]
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["agentproof*"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+addopts = "-ra --strict-config --strict-markers"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["backend/agentproof", "backend/tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agentproof"]
+
+[tool.setuptools.package-data]
+agentproof = ["migrations/*.sql"]

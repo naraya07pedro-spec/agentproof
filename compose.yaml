@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:17.10-bookworm@sha256:9b18b78397054fce88a9552e9d5a3ad5bb7fd258c5b3cc1c5028e46373d6ea8f
+    environment:
+      POSTGRES_DB: agentproof
+      POSTGRES_USER: agentproof
+      POSTGRES_PASSWORD: agentproof
+    volumes:
+      - evaluation-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "agentproof", "-d", "agentproof"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    networks: [storage]
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command:
+      - sh
+      - -ec
+      - python -m agentproof.migrate && exec uvicorn agentproof.api:app --host 0.0.0.0 --port 8000 --limit-concurrency 32 --no-access-log
+    environment:
+      AGENTPROOF_DATABASE_URL: postgresql://agentproof:agentproof@db:5432/agentproof
+      AGENTPROOF_API_TOKENS: ${AGENTPROOF_API_TOKENS:?Export the workspace-token JSON described in the getting-started guide}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [app, storage]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  dashboard:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+    environment:
+      AGENTPROOF_API_URL: http://api:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [app]
+networks:
+  app:
+  storage:
+    internal: true
+volumes:
+  evaluation-data:

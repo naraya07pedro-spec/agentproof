@@ -1,0 +1,86 @@
+name: verify
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      AGENTPROOF_TEST_DATABASE_URL: postgresql://agentproof:agentproof@127.0.0.1:5432/agentproof_test
+      AGENTPROOF_DATABASE_URL: postgresql://agentproof:agentproof@127.0.0.1:5432/agentproof
+      AGENTPROOF_API_TOKENS: '{"demo":"agentproof-ci-only-01BCTyHZUyZSfjWm6Z0nTg"}'
+      AGENTPROOF_E2E_TOKEN: agentproof-ci-only-01BCTyHZUyZSfjWm6Z0nTg
+      NEXT_TELEMETRY_DISABLED: "1"
+    services:
+      postgres:
+        image: postgres:17.10-bookworm@sha256:9b18b78397054fce88a9552e9d5a3ad5bb7fd258c5b3cc1c5028e46373d6ea8f
+        env:
+          POSTGRES_USER: agentproof
+          POSTGRES_PASSWORD: agentproof
+          POSTGRES_DB: agentproof
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U agentproof -d agentproof"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.13.6"
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24.22.1"
+      - run: uv sync --locked
+      - name: Check Python
+        run: |
+          uv run --locked ruff check backend
+          uv run --locked ruff format --check backend
+          uv run --locked mypy
+      - name: Audit locked Python dependencies
+        run: |
+          uv export --locked --no-emit-project --format requirements-txt -o "$RUNNER_TEMP/agentproof-requirements.txt"
+          uv run --locked pip-audit --require-hashes --disable-pip -r "$RUNNER_TEMP/agentproof-requirements.txt"
+      - name: Verify migrations and Python tests
+        run: |
+          docker exec "${{ job.services.postgres.id }}" createdb -U agentproof agentproof_test
+          uv run --locked python -m agentproof.migrate
+          uv run --locked python -m agentproof.migrate
+          uv run --locked pytest
+      - name: Exercise both CLI exit paths
+        run: |
+          status=0
+          uv run --locked agentproof gate examples/defensive-suite.json --fixture vulnerable > "$RUNNER_TEMP/vulnerable.json" || status=$?
+          test "$status" -eq 1
+          jq -e '.gate_passed == false' "$RUNNER_TEMP/vulnerable.json"
+          uv run --locked agentproof gate examples/defensive-suite.json --fixture corrected
+      - name: Check frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high
+          npm run lint
+          npm run typecheck
+          npm run build
+          npx playwright install --with-deps chromium
+      - name: Browser integration against PostgreSQL
+        run: |
+          uv run --locked uvicorn agentproof.api:app --host 127.0.0.1 --port 8000 --limit-concurrency 32 --no-access-log &
+          api_pid=$!
+          npm --prefix frontend run start -- --hostname 127.0.0.1 &
+          web_pid=$!
+          trap 'kill "$api_pid" "$web_pid" 2>/dev/null || true' EXIT
+          for url in http://127.0.0.1:8000/healthz http://127.0.0.1:3000/; do
+            curl --fail --silent --show-error --max-time 5 --retry 30 --retry-connrefused --retry-delay 1 "$url" -o /dev/null
+          done
+          npm --prefix frontend run test:e2e
