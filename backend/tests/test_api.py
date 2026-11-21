@@ -92,6 +92,18 @@ def test_authentication_precedes_parsing_and_database_access(no_database: TestCl
     assert no_database.get("/healthz").status_code == 503
 
 
+def test_openapi_schema_is_served_without_browser_documentation(no_database: TestClient) -> None:
+    response = no_database.get("/openapi.json")
+    assert response.status_code == 200
+    assert response.headers["Content-Type"] == "application/json"
+    schema = response.json()
+    assert "/v1/suites" in schema["paths"]
+    assert schema["components"]["securitySchemes"]["HTTPBearer"]["scheme"] == "bearer"
+    assert no_database.get("/docs").status_code == 404
+    assert no_database.get("/docs/oauth2-redirect").status_code == 404
+    assert no_database.get("/redoc").status_code == 404
+
+
 def test_settings_reject_misconfigured_authentication(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AGENTPROOF_DATABASE_URL", "host=localhost")
     monkeypatch.setenv("AGENTPROOF_API_TOKENS", json.dumps({"a": TOKEN_A, "b": TOKEN_A}))

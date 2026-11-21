@@ -7,7 +7,7 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=secret,id=build_ca \
     if [ -f /run/secrets/build_ca ]; then export SSL_CERT_FILE=/run/secrets/build_ca; fi; \
     uv sync --locked --no-dev --no-install-project
-COPY --chown=10001:10001 backend ./backend
+COPY --chown=10001:10001 backend/agentproof ./backend/agentproof
 RUN --mount=type=secret,id=build_ca \
     if [ -f /run/secrets/build_ca ]; then export SSL_CERT_FILE=/run/secrets/build_ca; fi; \
     uv sync --locked --no-dev

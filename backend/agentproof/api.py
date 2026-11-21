@@ -178,7 +178,13 @@ def create_app(configured_settings: Settings | None = None) -> FastAPI:
         app.state.settings = configured_settings or Settings.from_environment()
         yield
 
-    app = FastAPI(title="AgentProof API", version="1.0.0", lifespan=lifespan)
+    app = FastAPI(
+        title="AgentProof API",
+        version="1.0.0",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+    )
 
     @app.middleware("http")
     async def prevent_caching(
