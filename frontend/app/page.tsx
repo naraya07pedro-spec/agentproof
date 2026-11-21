@@ -4,6 +4,7 @@ import { type FormEvent, useState } from "react";
 import {
   api, displayName, formattedTime, type CaseResult, type Fixture, type Run, type RunDetail, type Suite,
 } from "./api-client";
+import HttpEvaluations from "./http-evaluations";
 
 type Session = { token: string; suites: Suite[]; runs: Run[] };
 const MAX_SUITE_BYTES = 128 * 1024;
@@ -302,6 +303,24 @@ function Workspace({ session }: { session: Session }) {
   );
 }
 
+function ConnectedWorkspace({ session }: { session: Session }) {
+  const [view, setView] = useState<"fixture" | "http">("fixture");
+  const [visitedHttp, setVisitedHttp] = useState(false);
+  return (
+    <>
+      <nav className="workflow-nav" aria-label="Evaluation workflows">
+        <button type="button" aria-pressed={view === "fixture"} onClick={() => setView("fixture")}>Fixture evaluations</button>
+        <button type="button" aria-pressed={view === "http"} onClick={() => {
+          setVisitedHttp(true);
+          setView("http");
+        }}>HTTP evaluations</button>
+      </nav>
+      <div hidden={view !== "fixture"}><Workspace session={session} /></div>
+      {visitedHttp && <div hidden={view !== "http"}><HttpEvaluations token={session.token} /></div>}
+    </>
+  );
+}
+
 export default function Home() {
   const [token, setToken] = useState("");
   const [session, setSession] = useState<Session | null>(null);
@@ -338,10 +357,10 @@ export default function Home() {
       <main className="shell">
         <div className="page-heading">
           <h1>Evaluations</h1>
-          <p>Run deterministic suites and inspect the evidence behind each result.</p>
+          <p>Run fixture evaluations and HTTP benchmarks, then inspect the evidence behind each result.</p>
         </div>
         {session ? (
-          <Workspace session={session} />
+          <ConnectedWorkspace session={session} />
         ) : (
           <section className="panel connect-panel" aria-labelledby="connect-title">
             <h2 id="connect-title">Connect to AgentProof</h2>

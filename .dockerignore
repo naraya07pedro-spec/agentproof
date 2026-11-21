@@ -4,6 +4,7 @@
 !uv.lock
 !backend/agentproof/**/*.py
 !backend/agentproof/migrations/*.sql
+!backend/agentproof/benchmarks/*.json
 !frontend/package.json
 !frontend/package-lock.json
 !frontend/next.config.ts
